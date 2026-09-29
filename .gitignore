@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tests and tools
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Operating system and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Results
+# evaluation.npz (about 7 MB per run) is regenerated from the saved policy.pt by run_all.py.
+# The launcher logs contain local absolute paths.
+# results/smoke/ is the output of the smoke run in the README.
+# config.json, training.csv and policy.pt of every run are kept.
+results/**/evaluation.npz
+results/*.log
+results/smoke/

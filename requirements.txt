@@ -1,0 +1,22 @@
+# Python 3.10. Exact versions of the environment used for the paper (CPU only).
+
+# Simulation and learning
+torch==2.4.1
+gymnasium==0.28.1
+mujoco==2.3.3
+safety-gymnasium @ git+https://github.com/PKU-Alignment/safety-gymnasium.git@ae966e511b9927f06b39c727ca5c650136a4e696
+
+# Numerics and analysis
+numpy==1.23.5
+scipy==1.11.4
+pandas==2.0.3
+matplotlib==3.8.4
+
+# Notebook
+notebook==7.6.2
+nbformat==5.11.1
+nbconvert==7.17.1
+ipykernel==7.3.0
+
+# Tests
+pytest==9.1.1

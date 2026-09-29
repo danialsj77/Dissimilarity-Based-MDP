@@ -79,16 +79,31 @@ def evaluate_policy(path: str, noises: Iterable[float], episodes: int, out_path:
     """Evaluates the policy saved at ``path`` at every noise level in ``noises``.
 
     Returns (and, if ``out_path`` is given, saves as a compressed ``.npz``) a dict with the keys
-    ``"nu{nu:.2f}/{name}"`` for ``name`` in ``RECORDED``.
+    ``"nu{nu:.2f}/{name}"`` for ``name`` in ``RECORDED``. Noise levels already stored in an existing
+    ``out_path`` are kept and not evaluated again, so adding a noise level to ``noises`` evaluates only
+    that level. This reproduces a full evaluation because the rollouts at one noise level depend only on
+    the seeds and on the number of episodes, which share one batched forward pass of the policy (the
+    floating-point result of the batched pass depends on the batch size). A stored file whose arrays
+    do not have the shape (episodes, horizon) is therefore discarded and every level is evaluated again.
     """
+    result: dict[str, np.ndarray] = {}
+    if out_path is not None and os.path.exists(out_path):
+        with np.load(out_path) as z:
+            result = {k: z[k] for k in z.files}
+        if any(arr.shape != (episodes, horizon) for arr in result.values()):
+            result = {}
+    missing = [nu for nu in noises if f"nu{nu:.2f}/velocity" not in result]
+    if not missing:
+        return result
     agent, rms, cfg = load_policy(path)
     torch.set_num_threads(1)
-    result = {}
-    for nu in noises:
+    for nu in missing:
         rec = rollout(agent, rms, cfg, nu, episodes, horizon=horizon)
         for key, arr in rec.items():
             result[f"nu{nu:.2f}/{key}"] = arr
     if out_path is not None:
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-        np.savez_compressed(out_path, **result)
+        tmp = out_path[:-len(".npz")] + ".tmp.npz"
+        np.savez_compressed(tmp, **result)
+        os.replace(tmp, out_path)
     return result

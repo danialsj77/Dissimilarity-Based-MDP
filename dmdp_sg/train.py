@@ -8,7 +8,12 @@ with PPO and generalized advantage estimation. Methods with ``lagrangian=True`` 
 episodic cost constraint J_c <= c_bar through a Lagrange multiplier lambda >= 0: before each policy
 update, lambda takes one Adam step on -lambda * (J_c_hat - c_bar) and is projected onto lambda >= 0,
 where J_c_hat is the mean cost of the most recently completed training episodes. The policy is
-updated with the combined advantage (A^r_t - lambda * A^c_t) / (1 + lambda).
+updated with the combined advantage A^r_t - lambda * A^c_t, standardized within each minibatch.
+
+Every episode ends at the time limit H by truncation, not by termination. The values of the final
+observation are therefore bootstrapped at the time limit (``_bootstrap_truncated``), so that GAE
+does not treat the time limit as a terminal state. The gradient norm is clipped separately for the
+actor, the reward critic and the cost critic.
 
 Each run writes three files to its output directory:
     policy.pt     network weights, input normalization, configuration and dimensions
@@ -91,6 +96,25 @@ def compute_gae(rewards: torch.Tensor, values: torch.Tensor, dones: torch.Tensor
     return adv, adv + values
 
 
+def _bootstrap_truncated(rewards: torch.Tensor, costs: torch.Tensor, agent: Agent, rms: RunningMeanStd,
+                         infos: dict[str, Any], terminated: np.ndarray, truncated: np.ndarray, gamma: float) -> None:
+    """Adds gamma * V(s_final) to the reward and gamma * V_c(s_final) to the cost of truncated episodes.
+
+    ``rewards`` and ``costs`` are the rows of the rollout buffer for the current step (modified in
+    place). The vector environment resets finished episodes automatically and stores their final
+    observation in ``infos["final_observation"]``. The episode boundary itself stays in ``dones``,
+    so the GAE trace is still cut there; only the missing bootstrap value is added.
+    """
+    idx = np.nonzero(np.logical_and(truncated, np.logical_not(terminated)))[0]
+    if idx.size == 0:
+        return
+    final = torch.as_tensor(rms.normalize(np.stack([infos["final_observation"][i] for i in idx])))
+    idx_t = torch.as_tensor(idx)
+    with torch.no_grad():
+        rewards[idx_t] += gamma * agent.value(final)
+        costs[idx_t] += gamma * agent.cost_value(final)
+
+
 @dataclass
 class RolloutBuffer:
     """Transitions of one rollout, each tensor of shape (num_steps, num_envs, ...)."""
@@ -136,6 +160,7 @@ def _collect_rollout(envs, agent: Agent, rms: RunningMeanStd, cfg: TrainConfig, 
         dissimilarity = _info_at_step(infos, "dissimilarity", n)
         buf.rewards[step] = torch.as_tensor(reward - cfg.beta * dissimilarity, dtype=torch.float32)
         buf.costs[step] = torch.as_tensor(cost, dtype=torch.float32)
+        _bootstrap_truncated(buf.rewards[step], buf.costs[step], agent, rms, infos, terminated, truncated, cfg.gamma)
         rms.update(raw_obs)
         next_obs = torch.as_tensor(rms.normalize(raw_obs))
         next_done = torch.as_tensor(np.logical_or(terminated, truncated), dtype=torch.float32)
@@ -157,8 +182,12 @@ def _ppo_update(agent: Agent, optimizer: torch.optim.Optimizer, buf: RolloutBuff
                 reward_returns: torch.Tensor, cost_returns: torch.Tensor, cfg: TrainConfig) -> None:
     """Clipped-surrogate PPO epochs on the combined advantage, with reward and cost value losses.
 
+    The actor, the reward critic and the cost critic share no parameters; the gradient norm of each
+    network is clipped separately, so that the actor step does not depend on the value losses.
     Minibatches are drawn with the global NumPy random generator (seeded in ``train``).
     """
+    networks = [list(agent.actor_mean.parameters()) + [agent.actor_logstd],
+                list(agent.critic.parameters()), list(agent.cost_critic.parameters())]
     obs_dim, act_dim = buf.obs.shape[-1], buf.actions.shape[-1]
     b_obs = buf.obs.reshape(-1, obs_dim)
     b_act = buf.actions.reshape(-1, act_dim)
@@ -186,7 +215,8 @@ def _ppo_update(agent: Agent, optimizer: torch.optim.Optimizer, buf: RolloutBuff
             loss = pg_loss - cfg.ent_coef * entropy.mean() + cfg.vf_coef * (v_loss + c_loss)
             optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm_(agent.parameters(), cfg.max_grad_norm)
+            for params in networks:
+                nn.utils.clip_grad_norm_(params, cfg.max_grad_norm)
             optimizer.step()
 
 
@@ -254,7 +284,7 @@ def train(cfg: TrainConfig, out_dir: str, log_every: int = 10, verbose: bool = T
                                        cfg.gamma, cfg.gae_lambda)
             adv_c, ret_c = compute_gae(buf.costs, buf.cost_values, buf.dones, agent.cost_value(next_obs), next_done,
                                        cfg.gamma, cfg.gae_lambda)
-        advantages = (adv_r - lam * adv_c) / (1.0 + lam)
+        advantages = adv_r - lam * adv_c
         _ppo_update(agent, optimizer, buf, advantages, ret_r, ret_c, cfg)
 
         if recent:

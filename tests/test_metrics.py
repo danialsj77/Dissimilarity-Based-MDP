@@ -64,3 +64,29 @@ def test_estimate_rho_hat_and_distance_to_target():
     assert late.size == EPISODES * (STEPS - K0) - 400 and np.all(np.isfinite(late))
     assert distance_to_target(values, 2.23, 0.5, k0=K0) < 0.02
     assert distance_to_target(values, 3.23, 0.5, k0=K0) == pytest.approx(1.0, abs=0.02)
+
+
+def test_wasserstein_1_matches_scipy():
+    from scipy.stats import wasserstein_distance
+    from dmdp_sg.metrics import Reference, wasserstein_1
+    rng = np.random.default_rng(9)
+    for n, m in [(1, 1), (7, 3), (320, 16000), (50, 50)]:
+        a, b = rng.standard_t(3, n), np.round(rng.normal(0.5, 2.0, m), 1)     # rounding creates ties
+        assert wasserstein_1(a, Reference(b)) == pytest.approx(wasserstein_distance(a, b), rel=1e-10, abs=1e-12)
+
+
+def _gait(phases, rng):
+    k = np.arange(STEPS)
+    return np.sin(2 * np.pi * k / 4.3 + phases[:, None]) + 0.3 * rng.normal(size=(EPISODES, STEPS))
+
+
+def test_oscillation_with_independent_phases_is_at_its_floor():
+    rng = np.random.default_rng(10)
+    values = _gait(rng.uniform(0, 2 * np.pi, EPISODES), rng)
+    assert 0.9 < _late_mean(values) / sampling_floor(values, K0, BLOCK, np.random.default_rng(11)) < 1.1
+
+
+def test_phase_locked_oscillation_is_above_its_floor():
+    rng = np.random.default_rng(12)
+    values = _gait(np.zeros(EPISODES), rng)                    # all episodes oscillate in phase: rho_k is periodic
+    assert _late_mean(values) / sampling_floor(values, K0, BLOCK, np.random.default_rng(13)) > 1.5

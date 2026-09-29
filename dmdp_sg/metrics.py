@@ -8,7 +8,8 @@ stable distribution rho_hat estimated from the evaluation episodes themselves:
              pooled over blocks of ``block`` consecutive steps
     rho_hat  distribution of v_k pooled over the late steps k >= k0, estimated on the other half
              of the episodes (cross-fitting)
-    D        1-Wasserstein distance between the two empirical distributions (exact in one dimension)
+    D        1-Wasserstein distance between the two empirical distributions (exact in one dimension,
+             ``wasserstein_1``)
 
 All functions take ``values`` of shape (episodes, steps), with NaN after the end of an episode.
 """
@@ -17,6 +18,41 @@ from __future__ import annotations
 
 import numpy as np
 from scipy.stats import wasserstein_distance
+
+
+class Reference:
+    """Sorted samples of a fixed reference distribution, prepared for repeated exact W1 computations."""
+
+    def __init__(self, samples: np.ndarray):
+        self.x = np.sort(np.asarray(samples, dtype=np.float64))
+        self.m = self.x.size
+        self.cumsum = np.concatenate([[0.0], np.cumsum(self.x)])
+
+    def integrated_cdf(self, t: np.ndarray) -> np.ndarray:
+        """int_{-inf}^t F(s) ds, where F is the empirical CDF of the reference."""
+        k = np.searchsorted(self.x, t, side="right")
+        return (k * t - self.cumsum[k]) / self.m
+
+
+def wasserstein_1(sample: np.ndarray, ref: Reference) -> float:
+    """Exact 1-Wasserstein distance int |F_sample - F_ref| dx between two one-dimensional empirical distributions.
+
+    Equal to ``scipy.stats.wasserstein_distance(sample, ref.x)`` up to rounding, but it costs
+    O(n log m) for a sample of size n once the reference of size m is prepared: on each interval
+    between consecutive sample points, F_sample is a constant c, and the integral of |c - F_ref| is
+    obtained from the integrated CDF of the reference, split where F_ref reaches c.
+    """
+    a = np.sort(np.asarray(sample, dtype=np.float64))
+    n, m = a.size, ref.m
+    edges = np.concatenate([[min(a[0], ref.x[0])], a, [max(a[-1], ref.x[-1])]])
+    lo, hi = edges[:-1], edges[1:]                   # F_sample = c_i = i / n on [lo_i, hi_i)
+    i = np.arange(n + 1)
+    c = i / n
+    j = -(-(i * m) // n)                             # ceil(i m / n): F_ref(x) >= c_i  <=>  x >= x_ref[j - 1]
+    cross = np.where(j <= 0, -np.inf, ref.x[np.clip(j - 1, 0, m - 1)])
+    r = np.clip(cross, lo, hi)
+    g_lo, g_hi, g_r = ref.integrated_cdf(lo), ref.integrated_cdf(hi), ref.integrated_cdf(r)
+    return float(np.sum(c * (r - lo) - (g_r - g_lo) + (g_hi - g_r) - c * (hi - r)))
 
 
 def split_halves(n: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
@@ -45,40 +81,62 @@ def stability_curve(values: np.ndarray, k0: int = 500, block: int = 10, min_samp
     first two arrays are empty.
     """
     n, K = values.shape
-    folds = split_halves(n, seed)
+    D = _cross_fitted_blocks(values, k0, block, min_samples, seed, first=0)
+    if D is None:
+        return np.array([]), np.array([]), np.isfinite(values).mean(0)
+    return np.arange(0, K, block) + block / 2, D, np.isfinite(values).mean(0)
+
+
+def _cross_fitted_blocks(values: np.ndarray, k0: int, block: int, min_samples: int, seed: int,
+                         first: int) -> np.ndarray | None:
+    """D(rho_k || rho_hat) for the blocks starting at first, first + block, ... (None if rho_hat is too small)."""
+    folds = split_halves(values.shape[0], seed)
     curves = []
     for a, b in (folds, folds[::-1]):
-        ref = estimate_rho_hat(values[a], k0)
-        if ref.size < min_samples:
-            return np.array([]), np.array([]), np.isfinite(values).mean(0)
+        late = estimate_rho_hat(values[a], k0)
+        if late.size < min_samples:
+            return None
+        ref = Reference(late)
         cur = []
-        for start in range(0, K, block):
+        for start in range(first, values.shape[1], block):
             sample = values[b, start:start + block]
             sample = sample[np.isfinite(sample)]
-            cur.append(wasserstein_distance(sample, ref) if sample.size >= min_samples else np.nan)
+            cur.append(wasserstein_1(sample, ref) if sample.size >= min_samples else np.nan)
         curves.append(cur)
-    centers = np.arange(0, K, block) + block / 2
-    return centers, np.nanmean(np.array(curves), axis=0), np.isfinite(values).mean(0)
+    with np.errstate(all="ignore"):
+        return np.nanmean(np.array(curves), axis=0)
 
 
-def sampling_floor(values: np.ndarray, k0: int, block: int, rng: np.random.Generator) -> float:
-    """Sampling floor of D(rho_k || rho_hat) for a stationary process (Appendix D).
+def sampling_floor(values: np.ndarray, k0: int, block: int, rng: np.random.Generator, draws: int = 10,
+                   min_samples: int = 4, seed: int = 0) -> float:
+    """Sampling floor of the late-time value of D(rho_k || rho_hat) for a stationary process (Appendix D).
 
     Because rho_k and rho_hat are estimated from finitely many samples, D(rho_k || rho_hat) stays
-    positive even for a stationary closed loop. The floor is the mean over all blocks of
-    ``stability_curve`` applied to a surrogate that is stationary by construction but keeps the
-    differences between episodes: every step of episode i is an independent draw (with
-    replacement) from the late-time values (k >= k0) of the same episode i. The surrogate has the
-    same number of steps as ``values``; it does not keep the correlation between consecutive steps.
+    positive even for a stationary closed loop. The floor is the mean of D over the blocks with
+    k >= k0, computed exactly as in ``stability_curve``, for a surrogate in which the late segment
+    (k >= k0) of every episode is shifted circularly in time by an independent random amount. The
+    surrogate is stationary by construction: the distribution across episodes no longer depends on
+    k, because the phases of the episodes are independent. It has the same rho_hat as ``values``
+    and keeps the differences between episodes and the correlation between consecutive steps
+    (except at the one wrap-around point per episode). The floor is averaged over ``draws``
+    surrogates drawn from ``rng``.
 
-    A ratio D_late / floor close to one indicates stationarity up to sampling error. The surrogate
-    is drawn from ``rng`` episode by episode, so a shared generator gives reproducible results when
-    the calls are made in a fixed order.
+    A ratio D_late / floor close to one indicates that rho_k is stationary for k >= k0 up to
+    sampling error; a ratio clearly above one indicates that rho_k still changes with k, for
+    example through a drift or because the episodes oscillate in phase.
     """
     late = values[:, k0:]
-    surrogate = np.stack([rng.choice(row[np.isfinite(row)], size=values.shape[1]) for row in late])
-    _, D, _ = stability_curve(surrogate, k0=k0, block=block)
-    return float(np.nanmean(D))
+    floors = []
+    for _ in range(draws):
+        surrogate = np.full_like(values, np.nan, dtype=np.float64)
+        for i, row in enumerate(late):
+            finite = row[np.isfinite(row)]
+            if finite.size:
+                surrogate[i, k0:k0 + finite.size] = np.roll(finite, rng.integers(finite.size))
+        first = -(-(2 * k0 - block) // (2 * block)) * block      # first block whose center is >= k0
+        D = _cross_fitted_blocks(surrogate, k0, block, min_samples, seed, first=max(first, 0))
+        floors.append(np.nanmean(D) if D is not None else np.nan)
+    return float(np.mean(floors))
 
 
 def distance_to_target(values: np.ndarray, mu_star: float, sd_star: float, k0: int = 500, n_ref: int = 20000,

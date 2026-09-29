@@ -58,7 +58,7 @@ ENVIRONMENTS: dict[str, dict[str, Any]] = {
 SEEDS = (0, 1, 2, 3, 4)
 TRAIN_NOISE = 0.05                   # fixed noise level nu, used only when train_noise_max = 0
 TRAIN_NOISE_MAX = 0.3                # nu ~ U[0, TRAIN_NOISE_MAX] redrawn at every training episode
-EVAL_NOISES = (0.0, 0.1, 0.2, 0.3, 0.4)
+EVAL_NOISES = (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
 EVAL_EPISODES = 64                   # M, evaluation episodes per (policy, noise level)
 
 

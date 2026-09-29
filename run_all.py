@@ -4,10 +4,11 @@ Each run trains one policy (``dmdp_sg.train``) and evaluates it at every noise l
 ``EVAL_NOISES`` (``dmdp_sg.evaluate``). The files of a run are written to
 ``results/<tag>/<env>/<method>/seed<s>/``.
 
-Finished runs are skipped, so the script can be re-run safely after an interruption:
+Finished work is skipped, so the script can be re-run safely after an interruption:
   * training is skipped if ``policy.pt`` exists;
-  * evaluation is skipped if ``evaluation.npz`` exists. Deleting ``evaluation.npz`` re-evaluates
-    the saved policy without retraining it.
+  * evaluation is skipped for the noise levels already stored in ``evaluation.npz``. Adding a level to
+    ``EVAL_NOISES`` evaluates only that level, and deleting ``evaluation.npz`` re-evaluates the saved
+    policy at every level, in both cases without retraining.
 
 Examples:
     python run_all.py --workers 14                                           # main study (Section 7)
@@ -41,8 +42,7 @@ def run_one(job: Job) -> tuple[str, str, int, str]:
         if not os.path.exists(policy):
             cfg = make_config(env, method, seed, **({"total_steps": steps} if steps else {}), **overrides)
             train(cfg, out, verbose=True, log_every=50)
-        if not os.path.exists(evaluation):
-            evaluate_policy(policy, EVAL_NOISES, EVAL_EPISODES, evaluation)
+        evaluate_policy(policy, EVAL_NOISES, EVAL_EPISODES, evaluation)     # only the missing noise levels
         return env, method, seed, "ok"
     except Exception:
         return env, method, seed, traceback.format_exc()
@@ -50,8 +50,8 @@ def run_one(job: Job) -> tuple[str, str, int, str]:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Train and evaluate the DMDP study; finished runs are skipped "
-                    "(delete evaluation.npz to re-evaluate a saved policy without retraining).",
+        description="Train and evaluate the DMDP study; finished training runs and stored noise levels are "
+                    "skipped (delete evaluation.npz to re-evaluate a saved policy without retraining).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--envs", nargs="+", default=["HalfCheetah"], choices=list(ENVIRONMENTS),
                    help="environments")

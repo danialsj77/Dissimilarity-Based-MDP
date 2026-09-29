@@ -72,8 +72,9 @@ HERE = os.path.abspath(".")
 sys.path.insert(0, HERE)
 
 from dmdp_sg.analysis import aggregate, load_config, load_evaluation, load_training, summarize
-from dmdp_sg.config import COST_LIMIT, ENVIRONMENTS, EPISODE_LENGTH, METHOD_LABELS, METHODS, make_config
-from dmdp_sg.metrics import estimate_rho_hat, sampling_floor
+from dmdp_sg.config import (COST_LIMIT, ENVIRONMENTS, EPISODE_LENGTH, EVAL_NOISES, METHOD_LABELS, METHODS,
+                             TRAIN_NOISE_MAX, make_config)
+from dmdp_sg.metrics import estimate_rho_hat, sampling_floor, stability_curve
 
 ENV = "HalfCheetah"
 TAG = "main"                                   # results/<TAG>/<ENV>/<method>/seed<s>
@@ -82,7 +83,7 @@ FIG_DIR = os.path.abspath(os.environ.get("DMDP_FIG_DIR", os.path.join(HERE, "fig
 os.makedirs(FIG_DIR, exist_ok=True)
 
 MAIN = ["PPO", "PPO-Lag", "Window-Lag", "DMDP"]                      # main comparison (Section 7.2)
-ABLATION = ["DMDP", "DMDP-noD", "State-D"]                           # omega_hat_t input, D term, or both (Section 7.4)
+ABLATION = ["DMDP", "DMDP-noD", "State-D"]                           # omega_hat_t input, D term, or both (Section 7.2)
 TARGETS = ["DMDP", "DMDP-slow"]                                      # stability does not imply reward (Section 7.2)
 ALL = list(dict.fromkeys(MAIN + ABLATION + TARGETS))
 SEEDS = [0, 1, 2, 3, 4]
@@ -154,7 +155,7 @@ md(r"""
 | $c_t=\mathbb{1}[v_t>v_{\mathsf{lim}}]$, $\bar c$ | `info["cost"]`, `COST_LIMIT` | safety cost and episodic cost limit |
 | $\hat{\rho}$ | `metrics.estimate_rho_hat` | stable distribution from late steps $k\ge k_0$ of held-out episodes (Section 7.1) |
 | $\mathbb{D}(\rho_k\|\hat{\rho})$ | `metrics.stability_curve` | evaluation dissimilarity, 1-Wasserstein (Section 7.1) |
-| sampling floor | `metrics.sampling_floor` | value of $\mathbb{D}(\rho_k\|\hat{\rho})$ for a stationary surrogate (Appendix D) |
+| sampling floor | `metrics.sampling_floor` | value of $\mathbb{D}(\rho_k\|\hat{\rho})$ for a stationary surrogate (Appendix D.2) |
 """)
 code(r"""
 spec = ENVIRONMENTS[ENV]
@@ -180,8 +181,8 @@ md(r"""
 ## 3 Training (optional)
 
 Set `RUN_TRAINING = True` to reproduce all runs from scratch. Each run trains one policy for $3\times10^6$ environment steps and then
-evaluates it on 64 episodes for every noise level $\nu\in\{0,0.1,0.2,0.3,0.4\}$. Finished runs are skipped
-(delete `evaluation.npz` of a run to re-evaluate its saved policy without retraining).
+evaluates it on 64 episodes for every noise level $\nu\in\{0,0.1,\ldots,0.8\}$. Finished runs are skipped, and only the
+noise levels missing from `evaluation.npz` are evaluated (delete `evaluation.npz` of a run to re-evaluate its saved policy without retraining).
 The same commands can be run in a terminal:
 `python run_all.py --envs HalfCheetah --tag main --workers 14`, and
 `python run_all.py --methods DMDP --tag beta4 --beta 4` (likewise `--tag beta025 --beta 0.25`) for the sensitivity to $\beta$.
@@ -221,7 +222,7 @@ md("## 5 Figures")
 md(r"""
 ### 5.1 Convergence of $\rho_k$ to the stable distribution $\hat{\rho}$ (Section 7.2)
 
-Mean over seeds (line) and standard error (band) of $\mathbb{D}(\rho_k\|\hat{\rho})$ against the step $k$, without noise and with $\nu=0.2$.
+Mean over seeds (line) and standard error (band) of $\mathbb{D}(\rho_k\|\hat{\rho})$ against the step $k$ for $\nu\in\{0,0.2,0.4,0.6\}$.
 """)
 code(r"""
 def curve_stats(method, nu):
@@ -232,7 +233,7 @@ def curve_stats(method, nu):
 
 
 def plot_curves(methods, nus, name, ylog=True):
-    fig, axes = plt.subplots(1, len(nus), figsize=(TEXTWIDTH, 2.0), sharey=True)
+    fig, axes = plt.subplots(1, len(nus), figsize=(TEXTWIDTH, 1.9), sharey=True)
     for ax, nu in zip(np.atleast_1d(axes), nus):
         for m in methods:
             c, mu, se = curve_stats(m, nu)
@@ -251,7 +252,7 @@ def plot_curves(methods, nus, name, ylog=True):
     return fig
 
 
-plot_curves(MAIN, [0.0, 0.2], "stability_curves");
+plot_curves(MAIN, [0.0, 0.2, 0.4, 0.6], "stability_curves");
 """)
 
 md(r"""
@@ -260,6 +261,13 @@ md(r"""
 Histogram of $v_k$ for $k\ge 500$, pooled over all evaluation episodes and seeds ($\nu=0$), with the target $\rho_\star$ and the threshold $v_{\mathsf{lim}}$.
 """)
 code(r"""
+def hist_bins(v, lo=-1.5, hi=6.0, width=0.125):
+    # bins of fixed width that cover every sample, so that no sample is dropped from the density
+    lo = min(lo, np.floor(np.min(v) / width) * width)
+    hi = max(hi, np.ceil(np.max(v) / width) * width)
+    return np.arange(lo, hi + width / 2, width)
+
+
 def pooled_late(method, nu):
     out = []
     for s in SEEDS:
@@ -274,12 +282,13 @@ def plot_stable_distributions(methods, name, nu=0.0):
     grid = np.linspace(-1.5, 6, 400)
     for ax, m in zip(axes, methods):
         v = pooled_late(m, nu)
-        ax.hist(v, bins=np.linspace(-1.5, 6, 61), density=True, color=COLORS[m], alpha=0.55, lw=0, label=S_RHOHAT)
+        ax.hist(v, bins=hist_bins(v), density=True, color=COLORS[m], alpha=0.55, lw=0, label=S_RHOHAT)
         cfg = load_config(ROOT, ENV, m, SEEDS[0])
         ax.plot(grid, norm.pdf(grid, cfg["mu_star"], cfg["sd_star"]), "k--", lw=1, label=S_RHOSTAR)
         ax.axvline(spec["v_limit"], color="k", lw=0.8, ls=":")
         ax.set_title(LABEL[m], fontsize=8.5)
         ax.set_xlabel(S_V)
+        ax.set_xlim(-1.5, 6)
     axes[0].set_ylabel("density")
     axes[0].legend(frameon=False, loc="upper left")
     save_figure(fig, name)
@@ -293,7 +302,7 @@ md(r"""
 ### 5.3 Sensor noise (Section 7.3)
 
 Return, cost, residual non-stationarity $\mathbb{D}(\rho_k\|\hat{\rho})$ for $k\ge500$, and distance of the stable distribution to the target, against $\nu$.
-Training used $\nu\sim\mathcal{U}[0,0.3]$, so $\nu=0.4$ lies outside the training range.
+Training used $\nu\sim\mathcal{U}[0,0.3]$, so the levels $\nu>0.3$ (shaded) lie outside the training range.
 """)
 code(r"""
 def plot_noise(methods, name):
@@ -311,7 +320,7 @@ def plot_noise(methods, name):
             ax.set_ylim(bottom=0)
         ax.set_xlabel(S_NU)
         ax.set_title(lab, fontsize=8.5)
-        ax.axvspan(0.3, 0.4, color="0.9", lw=0, zorder=0)
+        ax.axvspan(TRAIN_NOISE_MAX, max(EVAL_NOISES), color="0.9", lw=0, zorder=0)
     h, l = axes[0].get_legend_handles_labels()
     fig.tight_layout(w_pad=0.6)
     fig.legend(h, l, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=len(methods))
@@ -343,9 +352,10 @@ def plot_targets(name, nu=0.0):
     for m in TARGETS:
         v = pooled_late(m, nu)
         cfg = load_config(ROOT, ENV, m, SEEDS[0])
-        axes[1].hist(v, bins=np.linspace(-1.5, 6, 61), density=True, color=COLORS[m], alpha=0.5, lw=0)
+        axes[1].hist(v, bins=hist_bins(v), density=True, color=COLORS[m], alpha=0.5, lw=0)
         axes[1].plot(grid, norm.pdf(grid, cfg["mu_star"], cfg["sd_star"]), color=COLORS[m], ls="--", lw=1)
     axes[1].axvline(spec["v_limit"], color="k", lw=0.8, ls=":")
+    axes[1].set_xlim(-1.5, 6)
     axes[1].set_xlabel(S_V)
     axes[1].set_ylabel("density")
     axes[1].set_title(S_RHOHAT + r" (filled) and " + S_RHOSTAR + r" (dashed)", fontsize=8.5)
@@ -362,22 +372,17 @@ def plot_targets(name, nu=0.0):
 plot_targets("targets");
 """)
 
-md("### 5.5 Ablation: distribution-parameter input and dissimilarity term (Section 7.4, Appendix D)")
-code(r"""
-plot_curves(ABLATION, [0.0, 0.2], "ablation_curves");
-plot_noise(ABLATION, "ablation_noise");
-""")
-
 md(r"""
-### 5.6 Training curves (Appendix D)
+### 5.5 Training curves (Section 7.1)
 
-Episodic return, episodic cost, and training dissimilarity during training, smoothed over ten updates.
+Episodic return, episodic cost, and training dissimilarity during training. Each logged value is the mean over the
+32 most recently completed training episodes; the curves are smoothed further over ten updates.
 """)
 code(r"""
 def plot_training(methods, name):
     keys = [("ep_return", "episodic return"), ("ep_cost", "episodic cost"),
             ("ep_dissimilarity", r"$\mathbb{D}(\rho_{\bar{\omega}_t}\|\rho_\star)$ (episode mean)")]
-    fig, axes = plt.subplots(1, 3, figsize=(TEXTWIDTH, 1.8))
+    fig, axes = plt.subplots(1, 3, figsize=(TEXTWIDTH, 2.2))
     for m in methods:
         runs = [load_training(ROOT, ENV, m, s) for s in SEEDS]
         runs = [r for r in runs if r is not None]
@@ -408,49 +413,75 @@ md(r"""
 ## 6 Tables
 
 Mean ± standard error over the five seeds. The LaTeX tables are written to the output folder (`figures/` by default) and are included in the paper with `\input`:
-`table_main.tex` (Section 7.2); `table_ablation.tex`, `table_shift.tex`, `table_beta.tex`, and `table_floor.tex` (Appendix D).
+`table_main.tex` (Section 7.2, all seven methods); `table_floor.tex` (Appendix D.2); `table_shift.tex` and `table_beta.tex` (Appendix D.3).
 """)
 code(r"""
-def fmt_pm(m, s, d=2):
-    return f"${m:.{d}f}\\pm{s:.{d}f}$"
+# Bold marks the best mean in a column (for each noise level). "DMDP, slow rho_star" pursues a different target and is
+# not compared, and the return is compared only among methods whose mean cost does not exceed the limit.
+BOLD_CANDIDATES = ["PPO", "PPO-Lag", "Window-Lag", "DMDP", "DMDP-noD", "State-D"]
+COST_LIMIT = 25.0
+
+
+def fmt_pm(m, s, d=2, bold=False):
+    body = f"{m:.{d}f}\\pm{s:.{d}f}"
+    return f"$\\bm{{{body}}}$" if bold else f"${body}$"
+
+
+def best_keys(values, digits, higher):
+    # keys whose value, rounded as displayed, is the best (ties are all marked); none if there are no candidates
+    shown = {k: round(float(v), digits) for k, v in values.items()}
+    if not shown:
+        return set()
+    best = max(shown.values()) if higher else min(shown.values())
+    return {k for k, v in shown.items() if v == best}
+
+
+# column, decimals, direction (True: higher is better, False: lower is better, None: constraint, not bolded)
+MAIN_COLUMNS = [("ret", 0, True), ("cost", 1, None), ("D_early", 2, False), ("D_late", 3, False), ("D_target", 2, False)]
+
+
+def feasible(table, key, col):
+    return col != "ret" or table.loc[key, "cost"] <= COST_LIMIT
 
 
 def latex_table(methods, nus, name):
+    best = {(nu, col): best_keys({m: mean.loc[(m, nu), col] for m in BOLD_CANDIDATES if feasible(mean, (m, nu), col)},
+                                 d, hi)
+            for nu in nus for col, d, hi in MAIN_COLUMNS if hi is not None}
     rows = []
     for m in methods:
         for nu in nus:
             mu, se = mean.loc[(m, nu)], sem.loc[(m, nu)]
-            rows.append(" & ".join([
-                LABEL[m] if nu == nus[0] else "", f"${nu:g}$",
-                fmt_pm(mu.ret, se.ret, 0), fmt_pm(mu.cost, se.cost, 1),
-                fmt_pm(mu.D_early, se.D_early), fmt_pm(mu.D_late, se.D_late, 3),
-                fmt_pm(mu.D_target, se.D_target)]) + r" \\")
+            cells = [fmt_pm(mu[col], se[col], d, bold=hi is not None and m in best[(nu, col)]) for col, d, hi in MAIN_COLUMNS]
+            rows.append(" & ".join([LABEL[m] if nu == nus[0] else "", f"${nu:g}$"] + cells) + r" \\")
         rows.append(r"\midrule")
     rows = rows[:-1]
     head = (r"\begin{tabular}{llccccc}" "\n" r"\toprule" "\n"
-            r"Method & $\nu$ & return $\uparrow$ & cost ($\bar{c}=25$) & $\mathbb{D}(\rho_k\|\hat{\rho})$, $k<200$ & "
-            r"$\mathbb{D}(\rho_k\|\hat{\rho})$, $k\geq500$ & $\mathbb{D}(\hat{\rho}\|\rho_\star)$ \\" "\n" r"\midrule")
+            r"Method & $\nu$ & return $\uparrow$ & cost ($\leq\bar{c}=25$) & $\mathbb{D}(\rho_k\|\hat{\rho})$, $k<200$ $\downarrow$ & "
+            r"$\mathbb{D}(\rho_k\|\hat{\rho})$, $k\geq500$ $\downarrow$ & $\mathbb{D}(\hat{\rho}\|\rho_\star)$ $\downarrow$ \\" "\n" r"\midrule")
     tex = head + "\n" + "\n".join(rows) + "\n" + r"\bottomrule" + "\n" + r"\end{tabular}" + "\n"
     save_table(name, tex)
     return tex
 
 
-print(latex_table(MAIN + ["DMDP-slow"], [0.0, 0.2], "table_main.tex"))
-print(latex_table(ABLATION, [0.0, 0.2], "table_ablation.tex"))
+print(latex_table(["PPO", "PPO-Lag", "Window-Lag", "DMDP", "DMDP-noD", "State-D", "DMDP-slow"], [0.0, 0.2], "table_main.tex"))
 
 # shift of the stable distribution caused by sensor noise, D(rho_hat(nu) || rho_hat(0))
-lines = [" & ".join([LABEL[m]] + [fmt_pm(mean.loc[(m, nu), "D_shift"], sem.loc[(m, nu), "D_shift"])
-                                  for nu in [0.1, 0.2, 0.3, 0.4]]) + r" \\"
+SHIFT_NUS = [0.2, 0.4, 0.6, 0.8]
+best_shift = {nu: best_keys({m: mean.loc[(m, nu), "D_shift"] for m in BOLD_CANDIDATES}, 2, False) for nu in SHIFT_NUS}
+lines = [" & ".join([LABEL[m]] + [fmt_pm(mean.loc[(m, nu), "D_shift"], sem.loc[(m, nu), "D_shift"], bold=m in best_shift[nu])
+                                  for nu in SHIFT_NUS]) + r" \\"
          for m in ALL]
 tex = (r"\begin{tabular}{lcccc}" "\n" r"\toprule" "\n"
-       r"Method & $\nu=0.1$ & $\nu=0.2$ & $\nu=0.3$ & $\nu=0.4$ \\" "\n" r"\midrule" "\n"
+       r" & \multicolumn{4}{c}{$\mathbb{D}(\hat{\rho}_\nu\|\hat{\rho}_0)$ $\downarrow$} \\" "\n" r"\cmidrule(lr){2-5}" "\n"
+       r"Method & $\nu=0.2$ & $\nu=0.4$ & $\nu=0.6$ & $\nu=0.8$ \\" "\n" r"\midrule" "\n"
        + "\n".join(lines) + "\n" r"\bottomrule" "\n" r"\end{tabular}" "\n")
 save_table("table_shift.tex", tex)
 print(tex)
 """)
 
 md(r"""
-### 6.1 Sensitivity to the weight $\beta$ (Section 7.4, Appendix D)
+### 6.1 Sensitivity to the weight $\beta$ (Section 7.2, Appendix D.3)
 
 DMDP with $\beta\in\{0.25,1,4\}$ (five seeds each). $\beta$ trades the task reward against the dissimilarity to $\rho_\star$.
 """)
@@ -465,19 +496,20 @@ for beta, root in beta_roots:
 dfb = pd.concat(rows)
 mb = dfb.groupby(["beta", "nu"]).mean(numeric_only=True)
 sb = dfb.groupby(["beta", "nu"]).sem(numeric_only=True)
+BETAS = [0.25, 1.0, 4.0]
+best_beta = {(nu, col): best_keys({b: mb.loc[(b, nu), col] for b in BETAS if feasible(mb, (b, nu), col)}, d, hi)
+             for nu in [0.0, 0.2] for col, d, hi in MAIN_COLUMNS if hi is not None}
 lines = []
-for beta in [0.25, 1.0, 4.0]:
+for beta in BETAS:
     for nu in [0.0, 0.2]:
-        if (beta, nu) not in mb.index:
-            continue
         mu, se = mb.loc[(beta, nu)], sb.loc[(beta, nu)]
-        lines.append(" & ".join([
-            f"${beta:g}$" if nu == 0.0 else "", f"${nu:g}$", fmt_pm(mu.ret, se.ret, 0), fmt_pm(mu.cost, se.cost, 1),
-            fmt_pm(mu.D_early, se.D_early), fmt_pm(mu.D_late, se.D_late, 3), fmt_pm(mu.D_target, se.D_target),
-            fmt_pm(mu.mu_hat, se.mu_hat), fmt_pm(mu.sd_hat, se.sd_hat)]) + r" \\")
+        cells = [fmt_pm(mu[col], se[col], d, bold=hi is not None and beta in best_beta[(nu, col)]) for col, d, hi in MAIN_COLUMNS]
+        lines.append(" & ".join([f"${beta:g}$" if nu == 0.0 else "", f"${nu:g}$"] + cells
+                                + [fmt_pm(mu.mu_hat, se.mu_hat), fmt_pm(mu.sd_hat, se.sd_hat)]) + r" \\")
 tex = (r"\begin{tabular}{llccccccc}" "\n" r"\toprule" "\n"
-       r"$\beta$ & $\nu$ & return & cost & $\mathbb{D}(\rho_k\|\hat{\rho})$, $k<200$ & $\mathbb{D}(\rho_k\|\hat{\rho})$, $k\geq500$ & "
-       r"$\mathbb{D}(\hat{\rho}\|\rho_\star)$ & mean of $\hat{\rho}$ & std of $\hat{\rho}$ \\" "\n" r"\midrule" "\n"
+       r"$\beta$ & $\nu$ & return $\uparrow$ & cost ($\leq\bar{c}=25$) & $\mathbb{D}(\rho_k\|\hat{\rho})$, $k<200$ $\downarrow$ & "
+       r"$\mathbb{D}(\rho_k\|\hat{\rho})$, $k\geq500$ $\downarrow$ & $\mathbb{D}(\hat{\rho}\|\rho_\star)$ $\downarrow$ & "
+       r"mean of $\hat{\rho}$ & std of $\hat{\rho}$ \\" "\n" r"\midrule" "\n"
        + "\n".join(lines) + "\n" r"\bottomrule" "\n" r"\end{tabular}" "\n")
 save_table("table_beta.tex", tex)
 print(tex)
@@ -486,37 +518,59 @@ print(tex)
 md(r"""
 ## 7 Sanity checks
 
-**Sampling floor of the evaluation metric (Appendix D).** With 32 episodes per half and blocks of 10 steps, even a perfectly stationary process has
+**Sampling floor of the evaluation metric (Appendix D.2).** With 32 episodes per half and blocks of 10 steps, even a perfectly stationary process has
 $\mathbb{D}(\rho_k\|\hat{\rho})>0$ because of sampling. `metrics.sampling_floor` estimates this floor by applying the same estimator to a surrogate
-that is stationary by construction but keeps the differences between episodes: every step of episode $i$ is an independent draw from the late-time
-samples ($k\ge500$) of the same episode $i$. A ratio `D_late / floor` close to one means that the closed loop is stationary in the late steps up to sampling error.
+that is stationary by construction: the late segment ($k\ge500$) of every episode is shifted circularly in time by an independent random amount.
+The surrogate has the same $\hat{\rho}$, the same differences between episodes and the same correlation between consecutive steps as the data,
+and the floor is averaged over 10 such surrogates. A ratio `D_late / floor` close to one means that $\rho_k$ is stationary in the late steps up to
+sampling error; a ratio clearly above one means that $\rho_k$ still changes, for example because the episodes oscillate in phase.
 """)
 code(r"""
-rng = np.random.default_rng(0)                  # one generator shared by all calls, in this fixed order
+FLOOR_NUS = [0.0, 0.2, 0.4, 0.6, 0.8]
 rows = []
 for m in ALL:
-    for nu in [0.0, 0.2, 0.4]:
-        floors = [sampling_floor(load_evaluation(ROOT, ENV, m, s)[nu]["velocity"], K0, BLOCK, rng) for s in SEEDS]
+    for nu in FLOOR_NUS:
+        # one generator per (method, seed, nu), so that each value does not depend on the other cells
+        floors = [sampling_floor(load_evaluation(ROOT, ENV, m, s)[nu]["velocity"], K0, BLOCK,
+                                 np.random.default_rng([ALL.index(m), s, round(10 * nu)])) for s in SEEDS]
         rows.append(dict(method=m, nu=nu, floor=np.mean(floors), D_late=mean.loc[(m, nu), "D_late"]))
 floor = pd.DataFrame(rows).set_index(["method", "nu"])
 floor["ratio"] = floor["D_late"] / floor["floor"]
-lines = []
-for m in ALL:
-    cells = []
-    for nu in [0.0, 0.2, 0.4]:
-        r = floor.loc[(m, nu)]
-        cells += [f"${r.floor:.3f}$", f"${r.D_late:.3f}$", f"${r.ratio:.2f}$"]
-    lines.append(" & ".join([LABEL[m]] + cells) + r" \\")
-tex = (r"\begin{tabular}{lccccccccc}" "\n" r"\toprule" "\n"
-       r" & \multicolumn{3}{c}{$\nu=0$} & \multicolumn{3}{c}{$\nu=0.2$} & \multicolumn{3}{c}{$\nu=0.4$} \\" "\n"
-       r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}" "\n"
-       r"Method & floor & late & ratio & floor & late & ratio & floor & late & ratio \\" "\n" r"\midrule" "\n"
+lines = [" & ".join([LABEL[m]] + [f"${floor.loc[(m, nu), 'ratio']:.2f}$" for nu in FLOOR_NUS]) + r" \\" for m in ALL]
+tex = (r"\begin{tabular}{l*{5}{>{\centering\arraybackslash}p{1.25cm}}}" "\n" r"\toprule" "\n"
+       r" & \multicolumn{5}{c}{late-time dissimilarity / sampling floor} \\" "\n" r"\cmidrule(lr){2-6}" "\n"
+       r"Method & " + " & ".join(rf"$\nu={nu:g}$" for nu in FLOOR_NUS) + r" \\" "\n" r"\midrule" "\n"
        + "\n".join(lines) + "\n" r"\bottomrule" "\n" r"\end{tabular}" "\n")
 save_table("table_floor.tex", tex)
 floor.round(3)
 """)
 md(r"""
-**Per-seed details quoted in Section 7.2 and Section 7.3.** Noise-free stable distribution per seed, its shift at $\nu=0.4$, and the decomposition
+**Stationarity test of each run (Section 7.2, Appendix D.2).** For each trained policy and noise level, the late-time value of
+$\mathbb{D}(\rho_k\|\hat{\rho})$ is compared with its values on 60 independently drawn circular-shift surrogates; the one-sided $p$-value is
+$(1+n_{\geq})/61$, where $n_{\geq}$ counts the surrogates whose late-time value is at least that of the run (smallest attainable value $1/61$).
+""")
+code(r"""
+NULL_DRAWS = 60
+rows = []
+for m in ALL:
+    for nu in FLOOR_NUS:
+        for s in SEEDS:
+            v = load_evaluation(ROOT, ENV, m, s)[nu]["velocity"]
+            c, D, _ = stability_curve(v, k0=K0, block=BLOCK)
+            late = np.nanmean(D[c >= K0])
+            f = sampling_floor(v, K0, BLOCK, np.random.default_rng([ALL.index(m), s, round(10 * nu)]))
+            rng = np.random.default_rng([99, ALL.index(m), s, round(10 * nu)])
+            null = np.array([sampling_floor(v, K0, BLOCK, rng, draws=1) for _ in range(NULL_DRAWS)])
+            rows.append(dict(method=m, seed=s, nu=nu, ratio=late / f, p_value=(1 + np.sum(null >= late)) / (1 + NULL_DRAWS)))
+tests = pd.DataFrame(rows).set_index(["method", "seed", "nu"])
+rejected = tests[tests.p_value < 0.05]
+print(f"stationarity rejected at the 5% level in {len(rejected)} of {len(tests)} runs "
+      f"(about {len(tests) * 3 / (NULL_DRAWS + 1):.1f} expected by chance); "
+      f"{(rejected.ratio < 1.3).sum()} of them with a ratio below 1.3")
+rejected.sort_values("ratio", ascending=False).round(3)
+""")
+md(r"""
+**Per-seed details quoted in Section 7.2 and Section 7.3.** Noise-free stable distribution per seed, its shift at $\nu=0.4$ and $\nu=0.8$, and the decomposition
 of the spread of $v_k$ ($k\ge500$, $\nu=0$) into the average within-episode standard deviation and the standard deviation of the episode means.
 """)
 code(r"""
@@ -526,7 +580,8 @@ for m in ALL:
         v = load_evaluation(ROOT, ENV, m, s)[0.0]["velocity"][:, K0:]
         r0 = df[(df.method == m) & (df.seed == s) & (df.nu == 0.0)].iloc[0]
         r4 = df[(df.method == m) & (df.seed == s) & (df.nu == 0.4)].iloc[0]
-        rows.append(dict(method=m, seed=s, mu_hat=r0.mu_hat, sd_hat=r0.sd_hat, shift_nu04=r4.D_shift,
+        r8 = df[(df.method == m) & (df.seed == s) & (df.nu == 0.8)].iloc[0]
+        rows.append(dict(method=m, seed=s, mu_hat=r0.mu_hat, sd_hat=r0.sd_hat, shift_nu04=r4.D_shift, shift_nu08=r8.D_shift,
                          within_sd=np.mean(np.std(v, axis=1)), between_sd=np.std(np.mean(v, axis=1))))
 per_seed = pd.DataFrame(rows).set_index(["method", "seed"]).round(2)
 per_seed.loc[["PPO-Lag", "DMDP", "DMDP-slow"]]

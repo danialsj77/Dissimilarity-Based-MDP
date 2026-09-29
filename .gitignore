@@ -25,7 +25,7 @@ Thumbs.db
 *.swp
 
 # Results
-# evaluation.npz (about 7 MB per run) is regenerated from the saved policy.pt by run_all.py.
+# evaluation.npz (about 13 MB per run) is regenerated from the saved policy.pt by run_all.py.
 # The launcher logs contain local absolute paths.
 # results/smoke/ is the output of the smoke run in the README.
 # config.json, training.csv and policy.pt of every run are kept.

@@ -52,3 +52,20 @@ def test_training_smoke(tmp_path, method):
     stored = load_evaluation(str(tmp_path), cfg.env, cfg.method, cfg.seed)
     assert set(stored) == {0.0, 0.2}
     assert stored[0.2]["velocity"].shape == (2, 5) and np.all(np.isfinite(stored[0.2]["velocity"]))
+
+
+def test_truncated_episode_is_bootstrapped():
+    from dmdp_sg.agent import Agent, RunningMeanStd
+    from dmdp_sg.train import _bootstrap_truncated
+    torch.manual_seed(0)
+    agent, rms = Agent(3, 1), RunningMeanStd(3)
+    final = np.array([[0.5, -1.0, 2.0], [1.0, 1.0, 1.0]])
+    infos = {"final_observation": np.array([final[0], final[1], None], dtype=object)}
+    rewards, costs = torch.ones(3), torch.zeros(3)
+    terminated, truncated = np.array([False, True, False]), np.array([True, True, False])
+    _bootstrap_truncated(rewards, costs, agent, rms, infos, terminated, truncated, gamma=0.9)
+    x = torch.as_tensor(rms.normalize(final[:1]))
+    with torch.no_grad():
+        assert torch.allclose(rewards[0], 1.0 + 0.9 * agent.value(x)[0])
+        assert torch.allclose(costs[0], 0.9 * agent.cost_value(x)[0])
+    assert rewards[1:].tolist() == [1.0, 1.0] and costs[1:].tolist() == [0.0, 0.0]   # terminated or running

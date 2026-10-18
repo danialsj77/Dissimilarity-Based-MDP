@@ -1,0 +1,16 @@
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}lcccccc@{}}
+\toprule
+ & \multicolumn{2}{c}{end of training} & \multicolumn{2}{c}{evaluation, $\eta=0$} & \multicolumn{2}{c}{evaluation, $\eta=0.2$} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Method & $\mathbb{P}[R\geq R_{\mathsf{Thr}}]$ $\uparrow$ & 10--90\% range $\downarrow$ & $\mathbb{P}[R\geq R_{\mathsf{Thr}}]$ $\uparrow$ & 10--90\% range $\downarrow$ & $\mathbb{P}[R\geq R_{\mathsf{Thr}}]$ $\uparrow$ & 10--90\% range $\downarrow$ \\
+\midrule
+PPO & $0.00\pm0.00$ & $3653$ & $0.00\pm0.00$ & $2150$ & $0.00\pm0.00$ & $2828$ \\
+PPO-Lag & $0.00\pm0.00$ & $\bm{1402}$ & $0.00\pm0.00$ & $592$ & $0.00\pm0.00$ & $\bm{1129}$ \\
+Distributional PPO & $0.00\pm0.00$ & $3846$ & $0.00\pm0.00$ & $2437$ & $0.00\pm0.00$ & $3249$ \\
+Distributional PPO-Lag & $0.00\pm0.00$ & $1535$ & $0.00\pm0.00$ & $\bm{383}$ & $0.00\pm0.00$ & $1496$ \\
+Implicit DMDP (PPO) & $0.00\pm0.00$ & $3795$ & $0.02\pm0.02$ & $753$ & $0.00\pm0.00$ & $3140$ \\
+Implicit DMDP-Lag (PPO) & $0.00\pm0.00$ & $2182$ & $0.00\pm0.00$ & $437$ & $0.00\pm0.00$ & $2091$ \\
+DMDP (PPO) & $0.63\pm0.17$ & $10410$ & $0.78\pm0.20$ & $9003$ & $0.55\pm0.21$ & $9032$ \\
+DMDP-Lag (PPO) & $\bm{0.68\pm0.05}$ & $10691$ & $\bm{0.97\pm0.02}$ & $691$ & $\bm{0.66\pm0.14}$ & $6713$ \\
+\bottomrule
+\end{tabular*}

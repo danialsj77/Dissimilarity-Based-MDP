@@ -1,15 +1,16 @@
-\begin{tabular}{lcccc}
+\begin{tabular}{lccccc}
 \toprule
- & \multicolumn{4}{c}{$\mathbb{D}(\hat{\rho}_\nu\|\hat{\rho}_0)$ $\downarrow$} \\
-\cmidrule(lr){2-5}
-Method & $\nu=0.2$ & $\nu=0.4$ & $\nu=0.6$ & $\nu=0.8$ \\
+ & \multicolumn{5}{c}{$\mathbb{D}(\hat{\rho}_\eta\|\hat{\rho}_0)$ $\downarrow$} \\
+\cmidrule(lr){2-6}
+Method & $\eta=0.1$ & $\eta=0.2$ & $\eta=0.3$ & $\eta=0.4$ & $\eta=0.5$ \\
 \midrule
-PPO & $0.45\pm0.27$ & $1.10\pm0.52$ & $1.58\pm0.58$ & $1.87\pm0.55$ \\
-PPO-Lag & $0.31\pm0.15$ & $0.77\pm0.24$ & $1.14\pm0.26$ & $1.38\pm0.24$ \\
-PPO-Lag (window input) & $\bm{0.15\pm0.01}$ & $\bm{0.52\pm0.04}$ & $\bm{0.96\pm0.06}$ & $\bm{1.24\pm0.04}$ \\
-DMDP & $0.22\pm0.07$ & $0.75\pm0.20$ & $1.24\pm0.21$ & $1.43\pm0.19$ \\
-DMDP w/o $\mathbb{D}$ & $0.18\pm0.04$ & $0.68\pm0.15$ & $1.14\pm0.15$ & $1.42\pm0.15$ \\
-DMDP w/o $\hat{\omega}_t$ & $0.19\pm0.02$ & $0.62\pm0.07$ & $1.04\pm0.09$ & $1.29\pm0.10$ \\
-DMDP, slow $\rho_\star$ & $0.09\pm0.02$ & $0.32\pm0.06$ & $0.72\pm0.09$ & $0.95\pm0.08$ \\
+PPO & $0.58\pm0.12$ & $1.85\pm0.20$ & $2.71\pm0.21$ & $3.23\pm0.29$ & $3.56\pm0.37$ \\
+PPO-Lag & $\bm{0.09\pm0.01}$ & $\bm{0.53\pm0.10}$ & $\bm{1.32\pm0.19}$ & $\bm{1.82\pm0.20}$ & $\bm{2.05\pm0.14}$ \\
+Distributional PPO & $0.95\pm0.27$ & $2.15\pm0.59$ & $2.94\pm0.52$ & $3.46\pm0.48$ & $3.70\pm0.47$ \\
+Distributional PPO-Lag & $0.12\pm0.06$ & $0.57\pm0.18$ & $1.42\pm0.18$ & $2.11\pm0.11$ & $2.34\pm0.08$ \\
+Implicit DMDP (PPO) & $0.94\pm0.32$ & $2.96\pm0.06$ & $3.82\pm0.18$ & $3.96\pm0.20$ & $4.12\pm0.17$ \\
+Implicit DMDP-Lag (PPO) & $0.12\pm0.02$ & $0.78\pm0.24$ & $1.51\pm0.25$ & $2.12\pm0.10$ & $2.27\pm0.11$ \\
+DMDP (PPO) & $0.12\pm0.04$ & $0.60\pm0.10$ & $1.46\pm0.19$ & $1.98\pm0.13$ & $2.18\pm0.08$ \\
+DMDP-Lag (PPO) & $0.11\pm0.02$ & $0.64\pm0.06$ & $1.64\pm0.15$ & $2.03\pm0.09$ & $2.22\pm0.07$ \\
 \bottomrule
 \end{tabular}

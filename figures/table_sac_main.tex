@@ -1,0 +1,29 @@
+\begin{tabular}{llcccccc}
+\toprule
+Method & $\eta$ & \begin{tabular}[b]{@{}c@{}}return \\ $r^{\mathsf{eva}}_t$ $\uparrow$\end{tabular} & cost $\downarrow$ & \begin{tabular}[b]{@{}c@{}}$\mathbb{D}(\rho_k\|\hat{\rho})$ \\ $k<200$ $\downarrow$\end{tabular} & \begin{tabular}[b]{@{}c@{}}$\mathbb{D}(\rho_k\|\hat{\rho})$ \\ $k\geq500$ $\downarrow$\end{tabular} & \begin{tabular}[b]{@{}c@{}}$\mathbb{D}(\hat{\rho}\|\rho^{v}_\star)$ \\ $\downarrow$\end{tabular} & \begin{tabular}[b]{@{}c@{}}$\mathbb{P}[\mathbb{D}(\bar{\rho}_t\|\rho_\star)$ \\ $\leq\mathbb{D}_{\mathsf{thr}}]$ $\uparrow$\end{tabular} \\
+\midrule
+SAC & $0$ & $461\pm565$ & $218.9\pm126.1$ & $0.47\pm0.08$ & $0.301\pm0.065$ & $0.98\pm0.17$ & $0.01\pm0.01$ \\
+ & $0.2$ & $526\pm616$ & $205.4\pm130.0$ & $0.37\pm0.07$ & $0.197\pm0.021$ & $1.06\pm0.17$ & $0.02\pm0.02$ \\
+\midrule
+SAC-Lag & $0$ & $3802\pm1920$ & $6.8\pm3.7$ & $0.26\pm0.02$ & $0.155\pm0.022$ & $0.73\pm0.23$ & $0.23\pm0.17$ \\
+ & $0.2$ & $3467\pm1929$ & $\bm{4.9\pm2.2}$ & $0.26\pm0.03$ & $0.155\pm0.033$ & $0.81\pm0.24$ & $0.21\pm0.18$ \\
+\midrule
+Distributional & $0$ & $819\pm141$ & $108.7\pm48.7$ & $0.36\pm0.04$ & $0.233\pm0.026$ & $0.96\pm0.14$ & $0.00\pm0.00$ \\
+SAC & $0.2$ & $837\pm103$ & $85.9\pm35.3$ & $0.33\pm0.03$ & $0.205\pm0.018$ & $1.03\pm0.13$ & $0.00\pm0.00$ \\
+\midrule
+Distributional & $0$ & $1248\pm85$ & $11.2\pm6.6$ & $0.41\pm0.06$ & $0.247\pm0.023$ & $1.04\pm0.12$ & $0.00\pm0.00$ \\
+SAC-Lag & $0.2$ & $1185\pm95$ & $7.8\pm3.1$ & $0.37\pm0.04$ & $0.205\pm0.011$ & $1.12\pm0.10$ & $0.00\pm0.00$ \\
+\midrule
+Implicit DMDP & $0$ & $-2410\pm243$ & $844.6\pm46.6$ & $1.03\pm0.10$ & $0.563\pm0.171$ & $1.88\pm0.13$ & $0.00\pm0.00$ \\
+(SAC) & $0.2$ & $-1824\pm329$ & $726.4\pm63.2$ & $0.82\pm0.09$ & $0.427\pm0.136$ & $1.46\pm0.17$ & $0.00\pm0.00$ \\
+\midrule
+Implicit DMDP-Lag & $0$ & $4729\pm1346$ & $2.2\pm1.7$ & $\bm{0.21\pm0.01}$ & $0.061\pm0.018$ & $0.30\pm0.03$ & $0.22\pm0.14$ \\
+(SAC) & $0.2$ & $8824\pm1758$ & $9.2\pm4.8$ & $\bm{0.22\pm0.01}$ & $0.073\pm0.020$ & $0.21\pm0.07$ & $0.68\pm0.17$ \\
+\midrule
+DMDP (SAC) & $0$ & $4010\pm3325$ & $406.1\pm166.9$ & $0.66\pm0.19$ & $0.446\pm0.176$ & $0.81\pm0.27$ & $0.40\pm0.24$ \\
+ & $0.2$ & $4138\pm2980$ & $329.5\pm132.4$ & $0.57\pm0.14$ & $0.311\pm0.107$ & $0.63\pm0.22$ & $0.38\pm0.23$ \\
+\midrule
+DMDP-Lag (SAC) & $0$ & $\bm{11981\pm105}$ & $\bm{1.0\pm0.5}$ & $\bm{0.21\pm0.01}$ & $\bm{0.056\pm0.006}$ & $\bm{0.13\pm0.01}$ & $\bm{0.99\pm0.01}$ \\
+ & $0.2$ & $\bm{10617\pm1191}$ & $6.3\pm3.8$ & $\bm{0.22\pm0.02}$ & $\bm{0.062\pm0.020}$ & $\bm{0.14\pm0.05}$ & $\bm{0.87\pm0.11}$ \\
+\bottomrule
+\end{tabular}

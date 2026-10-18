@@ -1,0 +1,16 @@
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}lcccccc@{}}
+\toprule
+ & \multicolumn{2}{c}{end of training} & \multicolumn{2}{c}{evaluation, $\eta=0$} & \multicolumn{2}{c}{evaluation, $\eta=0.2$} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Method & $\mathbb{P}[R\geq R_{\mathsf{Thr}}]$ $\uparrow$ & 10--90\% range $\downarrow$ & $\mathbb{P}[R\geq R_{\mathsf{Thr}}]$ $\uparrow$ & 10--90\% range $\downarrow$ & $\mathbb{P}[R\geq R_{\mathsf{Thr}}]$ $\uparrow$ & 10--90\% range $\downarrow$ \\
+\midrule
+SAC & $0.00\pm0.00$ & $2231$ & $0.00\pm0.00$ & $2154$ & $0.00\pm0.00$ & $2373$ \\
+SAC-Lag & $0.00\pm0.00$ & $1303$ & $0.00\pm0.00$ & $1365$ & $0.00\pm0.00$ & $1310$ \\
+Distributional SAC & $0.00\pm0.00$ & $911$ & $0.00\pm0.00$ & $1197$ & $0.00\pm0.00$ & $957$ \\
+Distributional SAC-Lag & $0.00\pm0.00$ & $\bm{589}$ & $0.00\pm0.00$ & $672$ & $0.00\pm0.00$ & $\bm{586}$ \\
+Implicit DMDP (SAC) & $0.00\pm0.00$ & $1248$ & $0.00\pm0.00$ & $685$ & $0.00\pm0.00$ & $1104$ \\
+Implicit DMDP-Lag (SAC) & $0.00\pm0.00$ & $668$ & $0.00\pm0.00$ & $\bm{548}$ & $0.00\pm0.00$ & $735$ \\
+DMDP (SAC) & $0.40\pm0.24$ & $9545$ & $0.40\pm0.24$ & $8970$ & $0.40\pm0.24$ & $9132$ \\
+DMDP-Lag (SAC) & $\bm{0.92\pm0.08}$ & $5088$ & $\bm{1.00\pm0.00}$ & $573$ & $\bm{0.97\pm0.02}$ & $6011$ \\
+\bottomrule
+\end{tabular*}
